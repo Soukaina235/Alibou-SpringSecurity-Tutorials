@@ -55,8 +55,8 @@
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
-			<optional>true</optional>
-			<!--<version>1.18.12</version>-->
+			<!--<optional>true</optional>-->
+			<version>1.18.12</version>
 		</dependency>
 
 <!--	Those next 3 dependencies are for the JwtService	-->
