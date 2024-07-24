@@ -1,6 +1,9 @@
 package com.soukaina.security.auth;
 
 import com.soukaina.security.config.JwtService;
+import com.soukaina.security.token.Token;
+import com.soukaina.security.token.TokenRepository;
+import com.soukaina.security.token.TokenType;
 import com.soukaina.security.user.Role;
 import com.soukaina.security.user.User;
 import com.soukaina.security.user.UserRepository;
@@ -15,10 +18,12 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AuthenticationService {
     private final UserRepository repository;
+    private final TokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
 
+    // creates a new user
     public AuthenticationResponse register(RegisterRequest request) {
         var user = User.builder()
                 .firstname(request.getFirstname())
@@ -28,13 +33,18 @@ public class AuthenticationService {
                 .role(Role.USER)
                 .build();
 
-        repository.save(user);
+        var savedUser = repository.save(user); // we need to retrieve the savedUser for later
         var jwtToken = jwtService.generateToken(user);
+
+        // now we need to persist that generated token into our db
+        saveUserToken(savedUser, jwtToken);
+
         return AuthenticationResponse.builder()
                 .token(jwtToken)
                 .build();
     }
 
+    // authenticates a user
     public AuthenticationResponse authenticate(AuthenticationRequest request) {
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
@@ -47,8 +57,38 @@ public class AuthenticationService {
                 .orElseThrow();
         var jwtToken = jwtService.generateToken(user);
 
+        revokeAllUserTokens(user); // we need to revoke them before saving the new token
+        // we also need to save the token here
+        saveUserToken(user, jwtToken);
+
         return AuthenticationResponse.builder()
                 .token(jwtToken)
                 .build();
+    }
+
+    private void saveUserToken(User user, String jwtToken) {
+        var token = Token.builder()
+                .user(user)
+                .token(jwtToken)
+                .tokenType(TokenType.BEARER)
+                // we just generated the token, so it can't be expired or revoked yet
+                .expired(false)
+                .revoked(false)
+                .build();
+        tokenRepository.save(token);
+    }
+
+    private void revokeAllUserTokens(User user) {
+        var validUserTokens = tokenRepository.findAllValidTokensByUserId(user.getId());
+        if (validUserTokens.isEmpty()) {
+            return;
+        }
+
+        // iterating over the tokens
+        validUserTokens.forEach(t -> {
+            t.setExpired(true);
+            t.setRevoked(true);
+        });
+        tokenRepository.saveAll(validUserTokens);
     }
 }

@@ -1,5 +1,6 @@
 package com.soukaina.security.config;
 
+import com.soukaina.security.token.TokenRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,6 +23,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
+    private final TokenRepository tokenRepository;
 
     @Override
     protected void doFilterInternal(
@@ -41,7 +43,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         userEmail = jwtService.extractUsername(jwt);
         if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) { // we also check if the user is not authenticated, because if so, we don't need to redo all of the process
             UserDetails userDetails = this.userDetailsService.loadUserByUsername(userEmail);
-            if (jwtService.isTokenValid(jwt, userDetails)) {
+
+            // Double-checking if the token is also valid in the db side
+            var isTokenValid = tokenRepository.findByToken(jwt)
+                    .map(t -> !t.isExpired() && !t.isRevoked()) // mapping it to a boolean
+                    .orElse(false); // if we can't find the Token object by the token string then we return false
+
+            if (jwtService.isTokenValid(jwt, userDetails) && isTokenValid) {
                 // the authToken is needed by spring and by the context security holder in order to update our security context
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                         userDetails,

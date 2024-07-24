@@ -1,5 +1,6 @@
 package com.soukaina.security.user;
 
+import com.soukaina.security.token.Token;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -31,6 +32,9 @@ public class User implements UserDetails {
     private String password; // Get password is overidden actually, because we are using the lombok annotation
     @Enumerated(EnumType.STRING)
     private Role role;
+
+    @OneToMany(mappedBy = "user")
+    private List<Token> tokens;
 
     // This function should return a list of roles
     @Override
