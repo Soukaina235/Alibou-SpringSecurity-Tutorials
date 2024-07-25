@@ -32,7 +32,7 @@ public class ApplicationConfig {
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
     }
 
-    // the authentication providor is the data access object which is responsible for fetching the user details, password encoding,...
+    // the authentication provider is the data access object which is responsible for fetching the user details, password encoding,...
     @Bean
     public AuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();

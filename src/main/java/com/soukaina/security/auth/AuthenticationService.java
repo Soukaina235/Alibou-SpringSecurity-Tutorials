@@ -1,5 +1,6 @@
 package com.soukaina.security.auth;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.soukaina.security.config.JwtService;
 import com.soukaina.security.token.Token;
 import com.soukaina.security.token.TokenRepository;
@@ -7,12 +8,19 @@ import com.soukaina.security.token.TokenType;
 import com.soukaina.security.user.Role;
 import com.soukaina.security.user.User;
 import com.soukaina.security.user.UserRepository;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Service;
+
+import java.io.IOException;
 
 @Service
 @RequiredArgsConstructor
@@ -35,12 +43,15 @@ public class AuthenticationService {
 
         var savedUser = repository.save(user); // we need to retrieve the savedUser for later
         var jwtToken = jwtService.generateToken(user);
+        var refreshToken = jwtService.generateRefreshToken(user);
 
         // now we need to persist that generated token into our db
         saveUserToken(savedUser, jwtToken);
 
+        // we can return null if we want our user to authenticate even after registering
         return AuthenticationResponse.builder()
-                .token(jwtToken)
+                .accessToken(jwtToken)
+                .refreshToken(refreshToken)
                 .build();
     }
 
@@ -56,13 +67,15 @@ public class AuthenticationService {
         var user = repository.findByEmail(request.getEmail())
                 .orElseThrow();
         var jwtToken = jwtService.generateToken(user);
+        var refreshToken = jwtService.generateRefreshToken(user);
 
         revokeAllUserTokens(user); // we need to revoke them before saving the new token
         // we also need to save the token here
         saveUserToken(user, jwtToken);
 
         return AuthenticationResponse.builder()
-                .token(jwtToken)
+                .accessToken(jwtToken)
+                .refreshToken(refreshToken)
                 .build();
     }
 
@@ -91,4 +104,39 @@ public class AuthenticationService {
         });
         tokenRepository.saveAll(validUserTokens);
     }
+
+    public void refreshToken(
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) throws IOException {
+        final String authenticationHeader = request.getHeader(HttpHeaders.AUTHORIZATION); // same as "Authorization"
+        final String refreshToken;
+        final String userEmail;
+        if (authenticationHeader == null || !authenticationHeader.startsWith("Bearer ")) {
+            return;
+        }
+        refreshToken = authenticationHeader.substring(7);
+        userEmail = jwtService.extractUsername(refreshToken);
+        if (userEmail != null) {
+            var user = this.repository.findByEmail(userEmail)
+                    .orElseThrow();
+
+            if (jwtService.isTokenValid(refreshToken, user)) {
+                var accessToken = jwtService.generateToken(user);
+                // we need to revoke the tokens for the user
+                revokeAllUserTokens(user);
+                saveUserToken(user, accessToken); // saving the new access token
+                var authResponse = AuthenticationResponse.builder()
+                        .accessToken(accessToken)
+                        .refreshToken(refreshToken)
+                        .build();
+                // In the outputStream, we write our authorization response
+                new ObjectMapper().writeValue(response.getOutputStream(), authResponse);
+            }
+        }
+    }
 }
+
+
+
+
